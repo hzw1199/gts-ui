@@ -1,9 +1,13 @@
 package com.wuadam.gts
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,7 +31,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.Key
@@ -37,13 +49,17 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import androidx.compose.foundation.shape.RoundedCornerShape
 
 private const val REMOVE_WARNING =
@@ -305,25 +321,37 @@ private fun StatusScreenContent(state: AppShellUiState, viewModel: AppShellViewM
                         )
                     }
                     if (menuFor == row.name && !menuBlocked) {
-                        TrackContextMenu(
-                            isActive = isActive,
-                            onSwitch = {
-                                menuFor = null
-                                viewModel.onSwitchTo(row.name)
+                        val density = LocalDensity.current
+                        Popup(
+                            alignment = Alignment.TopEnd,
+                            offset = with(density) {
+                                val gutter = 12.dp.roundToPx()
+                                IntOffset(gutter - 2.dp.roundToPx(), -gutter)
                             },
-                            onRename = {
-                                menuFor = null
-                                viewModel.onRenameStart(row.name)
-                            },
-                            onIgnore = {
-                                menuFor = null
-                                viewModel.onIgnoreEditStart(row.name)
-                            },
-                            onRemove = {
-                                menuFor = null
-                                viewModel.onRemoveStart(row.name)
-                            },
-                        )
+                            onDismissRequest = { menuFor = null },
+                            properties = PopupProperties(focusable = true),
+                        ) {
+                            TrackContextMenu(
+                                isActive = isActive,
+                                onDismiss = { menuFor = null },
+                                onSwitch = {
+                                    menuFor = null
+                                    viewModel.onSwitchTo(row.name)
+                                },
+                                onRename = {
+                                    menuFor = null
+                                    viewModel.onRenameStart(row.name)
+                                },
+                                onIgnore = {
+                                    menuFor = null
+                                    viewModel.onIgnoreEditStart(row.name)
+                                },
+                                onRemove = {
+                                    menuFor = null
+                                    viewModel.onRemoveStart(row.name)
+                                },
+                            )
+                        }
                     }
                 }
                 Box(Modifier.fillMaxWidth().height(1.dp).background(MacDivider))
@@ -338,40 +366,154 @@ private fun StatusScreenContent(state: AppShellUiState, viewModel: AppShellViewM
 @Composable
 private fun TrackContextMenu(
     isActive: Boolean,
+    onDismiss: () -> Unit,
     onSwitch: () -> Unit,
     onRename: () -> Unit,
     onIgnore: () -> Unit,
     onRemove: () -> Unit,
 ) {
+    val shape = RoundedCornerShape(8.dp)
+    val focusRequester = remember { FocusRequester() }
+    LaunchedEffect(Unit) { focusRequester.requestFocus() }
     Column(
         modifier = Modifier
-            .padding(start = 280.dp)
-            .width(180.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .background(androidx.compose.ui.graphics.Color.White)
-            .border(1.dp, MacDivider, RoundedCornerShape(10.dp))
+            .padding(12.dp)
+            .width(168.dp)
+            .shadow(
+                elevation = 10.dp,
+                shape = shape,
+                ambientColor = Color.Black.copy(alpha = 0.10f),
+                spotColor = Color.Black.copy(alpha = 0.16f),
+            )
+            .clip(shape)
+            .background(Color.White)
+            .border(1.dp, Color(0x14000000), shape)
+            .focusRequester(focusRequester)
+            .onPreviewKeyEvent { event ->
+                if (event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
+                    onDismiss()
+                    true
+                } else {
+                    false
+                }
+            }
             .padding(vertical = 4.dp),
     ) {
         for (label in trackContextMenuLabels(isActive)) {
-            val color = if (label == "Remove") MacRed else MacText
-            Text(
-                text = label,
-                color = color,
-                fontSize = 13.sp,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable {
-                        when (label) {
-                            "Switch to" -> onSwitch()
-                            "Rename" -> onRename()
-                            "Edit local ignore" -> onIgnore()
-                            "Remove" -> onRemove()
-                        }
+            TrackContextMenuItem(
+                label = label,
+                onClick = {
+                    when (label) {
+                        "Switch to" -> onSwitch()
+                        "Rename" -> onRename()
+                        "Edit local ignore" -> onIgnore()
+                        "Remove" -> onRemove()
                     }
-                    .padding(horizontal = 12.dp, vertical = 7.dp),
+                },
             )
         }
     }
+}
+
+@Composable
+private fun TrackContextMenuItem(label: String, onClick: () -> Unit) {
+    val interaction = remember { MutableInteractionSource() }
+    val hovered by interaction.collectIsHoveredAsState()
+    val danger = label == "Remove"
+    val color = when {
+        hovered -> Color.White
+        danger -> MacRed
+        else -> MacText
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp)
+            .clip(RoundedCornerShape(5.dp))
+            .background(
+                when {
+                    !hovered -> Color.Transparent
+                    danger -> MacRed
+                    else -> MacBlue
+                },
+            )
+            .hoverable(interaction)
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        TrackMenuIcon(label, color)
+        Spacer(Modifier.width(8.dp))
+        Text(label, color = color, fontSize = 13.sp, lineHeight = 16.sp)
+    }
+}
+
+@Composable
+private fun TrackMenuIcon(label: String, color: Color) {
+    Canvas(Modifier.size(14.dp)) {
+        val stroke = Stroke(width = 1.25.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
+        when (label) {
+            "Switch to" -> drawSwitchIcon(color, stroke)
+            "Rename" -> drawPencilIcon(color, stroke)
+            "Edit local ignore" -> drawDocIcon(color, stroke)
+            "Remove" -> drawTrashIcon(color, stroke)
+        }
+    }
+}
+
+private fun DrawScope.drawSwitchIcon(color: Color, stroke: Stroke) {
+    val w = size.width
+    val h = size.height
+    val path = Path().apply {
+        moveTo(w * 0.22f, h * 0.72f)
+        lineTo(w * 0.22f, h * 0.40f)
+        quadraticBezierTo(w * 0.22f, h * 0.20f, w * 0.46f, h * 0.20f)
+        lineTo(w * 0.68f, h * 0.20f)
+    }
+    drawPath(path, color, style = stroke)
+    drawLine(color, Offset(w * 0.50f, h * 0.05f), Offset(w * 0.76f, h * 0.20f), stroke.width, stroke.cap)
+    drawLine(color, Offset(w * 0.50f, h * 0.35f), Offset(w * 0.76f, h * 0.20f), stroke.width, stroke.cap)
+}
+
+private fun DrawScope.drawPencilIcon(color: Color, stroke: Stroke) {
+    val w = size.width
+    val h = size.height
+    drawLine(color, Offset(w * 0.78f, h * 0.22f), Offset(w * 0.30f, h * 0.70f), stroke.width, stroke.cap)
+    drawLine(color, Offset(w * 0.30f, h * 0.70f), Offset(w * 0.22f, h * 0.82f), stroke.width, stroke.cap)
+    drawLine(color, Offset(w * 0.22f, h * 0.82f), Offset(w * 0.34f, h * 0.74f), stroke.width, stroke.cap)
+}
+
+private fun DrawScope.drawDocIcon(color: Color, stroke: Stroke) {
+    val w = size.width
+    val h = size.height
+    val path = Path().apply {
+        moveTo(w * 0.30f, h * 0.12f)
+        lineTo(w * 0.70f, h * 0.12f)
+        lineTo(w * 0.70f, h * 0.88f)
+        lineTo(w * 0.30f, h * 0.88f)
+        close()
+    }
+    drawPath(path, color, style = stroke)
+    drawLine(color, Offset(w * 0.40f, h * 0.36f), Offset(w * 0.60f, h * 0.36f), stroke.width, stroke.cap)
+    drawLine(color, Offset(w * 0.40f, h * 0.52f), Offset(w * 0.60f, h * 0.52f), stroke.width, stroke.cap)
+    drawLine(color, Offset(w * 0.40f, h * 0.68f), Offset(w * 0.60f, h * 0.68f), stroke.width, stroke.cap)
+}
+
+private fun DrawScope.drawTrashIcon(color: Color, stroke: Stroke) {
+    val w = size.width
+    val h = size.height
+    drawLine(color, Offset(w * 0.18f, h * 0.28f), Offset(w * 0.82f, h * 0.28f), stroke.width, stroke.cap)
+    drawLine(color, Offset(w * 0.40f, h * 0.28f), Offset(w * 0.40f, h * 0.16f), stroke.width, stroke.cap)
+    drawLine(color, Offset(w * 0.40f, h * 0.16f), Offset(w * 0.60f, h * 0.16f), stroke.width, stroke.cap)
+    drawLine(color, Offset(w * 0.60f, h * 0.16f), Offset(w * 0.60f, h * 0.28f), stroke.width, stroke.cap)
+    val body = Path().apply {
+        moveTo(w * 0.26f, h * 0.36f)
+        lineTo(w * 0.32f, h * 0.86f)
+        lineTo(w * 0.68f, h * 0.86f)
+        lineTo(w * 0.74f, h * 0.36f)
+        close()
+    }
+    drawPath(body, color, style = stroke)
 }
 
 @Composable
