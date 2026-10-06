@@ -8,6 +8,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,8 +23,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -55,6 +57,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -64,6 +67,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 
 private const val REMOVE_WARNING =
     "This will permanently delete the track's Git history and info/exclude file. This action cannot be undone."
+
+private val TrackOverflowSlot = 28.dp
+private val TrackTableShape = RoundedCornerShape(12.dp)
 
 private val Mono = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 13.sp, color = EditorText)
 
@@ -264,25 +270,60 @@ private fun CreateTrackPane(state: AppShellUiState, viewModel: AppShellViewModel
 @Composable
 private fun StatusScreenContent(state: AppShellUiState, viewModel: AppShellViewModel) {
     var menuFor by remember { mutableStateOf(UiDebug.contextMenuTrack) }
+    val visibleRows = state.visibleTrackRows
     Column(Modifier.fillMaxSize().padding(horizontal = 28.dp, vertical = 22.dp)) {
-        Text("Current Track", color = MacGrayText, fontSize = 12.sp)
-        Spacer(Modifier.height(6.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                state.activeTrack ?: "—",
-                color = MacText,
-                fontSize = 22.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Spacer(Modifier.width(10.dp))
-            ActiveBadge()
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+            Column(Modifier.padding(end = 24.dp)) {
+                Text("Current Track", color = MacGrayText, fontSize = 12.sp)
+                Spacer(Modifier.height(6.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        state.activeTrack ?: "—",
+                        color = MacText,
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    ActiveBadge()
+                }
+            }
+            Column(Modifier.weight(1f), horizontalAlignment = Alignment.End) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        state.workspacePath ?: "—",
+                        modifier = Modifier.weight(1f, fill = false),
+                        color = MacGrayText,
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.Monospace,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.End,
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    WorkspaceFolderButton(onClick = viewModel::onRevealWorkspace)
+                }
+                Spacer(Modifier.height(8.dp))
+                MacTextField(
+                    value = state.searchQuery,
+                    onValueChange = viewModel::onSearchQueryChange,
+                    placeholder = "Search...",
+                    modifier = Modifier.widthIn(max = 300.dp).fillMaxWidth(),
+                )
+            }
         }
         Spacer(Modifier.height(8.dp))
         Text(
             "Linked to: ${state.linkTarget ?: "—"}",
+            modifier = Modifier.fillMaxWidth(),
             color = MacGrayText,
             fontSize = 12.sp,
             fontFamily = FontFamily.Monospace,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
         Spacer(Modifier.height(22.dp))
         Text(
@@ -292,10 +333,18 @@ private fun StatusScreenContent(state: AppShellUiState, viewModel: AppShellViewM
             fontWeight = FontWeight.SemiBold,
         )
         Spacer(Modifier.height(8.dp))
-        TrackTableHeader()
-        Box(Modifier.fillMaxWidth().height(1.dp).background(MacDivider))
-        LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
-            items(state.trackRows, key = { it.name }) { row ->
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(max = 440.dp)
+                .clip(TrackTableShape)
+                .background(Color.White)
+                .border(1.dp, Color(0xFFD1D1D6), TrackTableShape)
+                .verticalScroll(rememberScrollState()),
+        ) {
+            TrackTableHeader()
+            Box(Modifier.fillMaxWidth().height(1.dp).background(MacDivider))
+            for (row in visibleRows) {
                 val isActive = row.name == state.activeTrack
                 val editing = state.renameEdit?.takeIf { it.from == row.name }
                 val menuBlocked = state.isBusy || state.renameEdit != null ||
@@ -316,6 +365,9 @@ private fun StatusScreenContent(state: AppShellUiState, viewModel: AppShellViewM
                             row = row,
                             highlighted = isActive || menuFor == row.name,
                             onRightClick = {
+                                if (!menuBlocked) menuFor = row.name
+                            },
+                            onOverflowClick = {
                                 if (!menuBlocked) menuFor = row.name
                             },
                         )
@@ -354,7 +406,9 @@ private fun StatusScreenContent(state: AppShellUiState, viewModel: AppShellViewM
                         }
                     }
                 }
-                Box(Modifier.fillMaxWidth().height(1.dp).background(MacDivider))
+                if (row.name != visibleRows.last().name) {
+                    Box(Modifier.fillMaxWidth().height(1.dp).background(MacDivider))
+                }
             }
         }
         if (state.errorMessage != null && state.removeDialog == null && state.ignoreEditDialog == null) {
@@ -517,6 +571,61 @@ private fun DrawScope.drawTrashIcon(color: Color, stroke: Stroke) {
 }
 
 @Composable
+private fun WorkspaceFolderButton(onClick: () -> Unit) {
+    val interaction = remember { MutableInteractionSource() }
+    val hovered by interaction.collectIsHoveredAsState()
+    Box(
+        modifier = Modifier
+            .size(TrackOverflowSlot)
+            .clip(RoundedCornerShape(6.dp))
+            .background(if (hovered) MacGrayButton else Color.Transparent)
+            .hoverable(interaction)
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(Modifier.size(16.dp)) {
+            val stroke = Stroke(width = 1.25.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
+            val w = size.width
+            val h = size.height
+            val path = Path().apply {
+                moveTo(w * 0.12f, h * 0.34f)
+                lineTo(w * 0.12f, h * 0.84f)
+                lineTo(w * 0.88f, h * 0.84f)
+                lineTo(w * 0.88f, h * 0.40f)
+                lineTo(w * 0.50f, h * 0.40f)
+                lineTo(w * 0.40f, h * 0.22f)
+                lineTo(w * 0.12f, h * 0.22f)
+                close()
+            }
+            drawPath(path, MacGrayText, style = stroke)
+        }
+    }
+}
+
+@Composable
+private fun TrackOverflowButton(onClick: () -> Unit) {
+    val interaction = remember { MutableInteractionSource() }
+    val hovered by interaction.collectIsHoveredAsState()
+    Box(
+        modifier = Modifier
+            .size(TrackOverflowSlot)
+            .clip(RoundedCornerShape(6.dp))
+            .background(if (hovered) MacGrayButton else Color.Transparent)
+            .hoverable(interaction)
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(Modifier.size(14.dp)) {
+            val radius = 1.35.dp.toPx()
+            val cx = size.width / 2f
+            drawCircle(MacGrayText, radius, Offset(cx, size.height * 0.22f))
+            drawCircle(MacGrayText, radius, Offset(cx, size.height * 0.50f))
+            drawCircle(MacGrayText, radius, Offset(cx, size.height * 0.78f))
+        }
+    }
+}
+
+@Composable
 private fun TrackTableHeader() {
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp, horizontal = 8.dp),
@@ -524,6 +633,7 @@ private fun TrackTableHeader() {
         HeaderCell("Name", 1.2f)
         HeaderCell("Updated", 1f)
         HeaderCell("Status", 0.6f)
+        Spacer(Modifier.width(TrackOverflowSlot))
     }
 }
 
@@ -533,7 +643,12 @@ private fun androidx.compose.foundation.layout.RowScope.HeaderCell(text: String,
 }
 
 @Composable
-private fun TrackTableRow(row: TrackRowUi, highlighted: Boolean, onRightClick: () -> Unit) {
+private fun TrackTableRow(
+    row: TrackRowUi,
+    highlighted: Boolean,
+    onRightClick: () -> Unit,
+    onOverflowClick: () -> Unit,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -553,6 +668,7 @@ private fun TrackTableRow(row: TrackRowUi, highlighted: Boolean, onRightClick: (
         Box(Modifier.weight(0.6f)) {
             if (row.status == "ACTIVE") ActiveBadge() else Text("—", color = MacGrayText, fontSize = 13.sp)
         }
+        TrackOverflowButton(onClick = onOverflowClick)
     }
 }
 
@@ -604,6 +720,7 @@ private fun TrackTableRowEditing(
         Box(Modifier.weight(0.6f)) {
             if (status == "ACTIVE") ActiveBadge() else Text("—", color = MacGrayText, fontSize = 13.sp)
         }
+        Spacer(Modifier.width(TrackOverflowSlot))
     }
 }
 

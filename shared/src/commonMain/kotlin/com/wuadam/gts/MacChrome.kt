@@ -92,6 +92,7 @@ fun MacTextField(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     singleLine: Boolean = true,
+    placeholder: String? = null,
     textStyle: TextStyle = TextStyle(color = MacText, fontSize = 14.sp),
 ) {
     BasicTextField(
@@ -110,6 +111,19 @@ fun MacTextField(
                 ControlShape,
             )
             .padding(horizontal = 12.dp, vertical = 10.dp),
+        decorationBox = { innerTextField ->
+            Box(contentAlignment = Alignment.CenterStart) {
+                if (value.isEmpty() && !placeholder.isNullOrEmpty()) {
+                    Text(
+                        placeholder,
+                        color = MacGrayText,
+                        fontSize = textStyle.fontSize,
+                        fontFamily = textStyle.fontFamily,
+                    )
+                }
+                innerTextField()
+            }
+        },
     )
 }
 

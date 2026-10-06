@@ -186,6 +186,12 @@ fun interface FolderPicker {
     fun pickDirectory(): String?
 }
 
+const val WORKSPACE_FOLDER_REVEAL_ERROR = "Could not open the workspace folder."
+
+fun interface FolderRevealer {
+    fun reveal(path: String)
+}
+
 fun interface AppInstanceLauncher {
     fun launch(workspacePath: String)
 }
@@ -307,6 +313,18 @@ fun trackDirectoryPath(link: String, trackName: String): String {
 
 fun trackStatusCell(trackName: String, active: String): String =
     if (trackName == active) "ACTIVE" else "—"
+
+fun filterTrackRows(
+    rows: List<TrackRowUi>,
+    query: String,
+    pinnedName: String?,
+): List<TrackRowUi> {
+    if (query.isBlank()) return rows
+    val needle = query.lowercase()
+    return rows.filter { row ->
+        row.name.lowercase().contains(needle) || row.name == pinnedName
+    }
+}
 
 fun buildTrackRows(
     status: WorkspaceStatus,

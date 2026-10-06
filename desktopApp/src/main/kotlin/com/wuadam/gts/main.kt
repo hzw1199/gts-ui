@@ -39,6 +39,7 @@ fun main(args: Array<String>) = application {
                 fun canon(path: String) = runCatching { File(path).canonicalPath }.getOrElse { path }
                 canon(left) == canon(right)
             },
+            folderRevealer = DesktopFolderRevealer(),
         )
     }
     val state = viewModel.uiState

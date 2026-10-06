@@ -263,4 +263,34 @@ class GtsCommandsTest {
         assertEquals("—", rows.single().updated)
         assertEquals("ACTIVE", rows.single().status)
     }
+
+    @Test
+    fun filterTrackRows_matchesCaseInsensitiveSubstringInOrder() {
+        val rows = listOf(
+            TrackRowUi("dev", "t", "—"),
+            TrackRowUi("Release", "t", "ACTIVE"),
+            TrackRowUi("main", "t", "—"),
+        )
+        assertEquals(listOf("Release"), filterTrackRows(rows, "release", null).map { it.name })
+        assertEquals(listOf("dev", "Release"), filterTrackRows(rows, "e", null).map { it.name })
+    }
+
+    @Test
+    fun filterTrackRows_blankQueryReturnsEveryRow() {
+        val rows = listOf(
+            TrackRowUi("dev", "t", "—"),
+            TrackRowUi("release", "t", "ACTIVE"),
+        )
+        assertEquals(rows, filterTrackRows(rows, "", null))
+        assertEquals(rows, filterTrackRows(rows, " \t ", null))
+    }
+
+    @Test
+    fun filterTrackRows_pinsRenameRow() {
+        val rows = listOf(
+            TrackRowUi("dev", "t", "—"),
+            TrackRowUi("release", "t", "ACTIVE"),
+        )
+        assertEquals(listOf("dev", "release"), filterTrackRows(rows, "rel", "dev").map { it.name })
+    }
 }

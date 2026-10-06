@@ -45,6 +45,7 @@ class AppShellViewModelTest {
         },
         instanceLauncher: AppInstanceLauncher = AppInstanceLauncher {},
         sameWorkspace: WorkspacePathEquality = WorkspacePathEquality { left, right -> left == right },
+        folderRevealer: FolderRevealer = FolderRevealer {},
     ) = AppShellViewModel(
         folderPicker = folderPicker,
         gtsRunner = gtsRunner,
@@ -54,6 +55,7 @@ class AppShellViewModelTest {
         ioDispatcher = dispatcher,
         instanceLauncher = instanceLauncher,
         sameWorkspace = sameWorkspace,
+        folderRevealer = folderRevealer,
     )
 
     @Test
@@ -1319,6 +1321,141 @@ class AppShellViewModelTest {
         assertTrue(launched.isEmpty())
         assertEquals(callsAfterOpen, runner.calls.size)
         assertEquals("/tmp/registered", vm.uiState.workspacePath)
+    }
+
+    @Test
+    fun searchQuery_filtersRowsWithoutCallingGts() = runTest(dispatcher) {
+        val runner = RecordingGtsRunner {
+            GtsResult(
+                0,
+                """{"id":"id1","path":"/tmp/registered","active":"release","link":"/tmp/gts/storage/id1/release/.git","tracks":["dev","release"]}""",
+                "",
+            )
+        }
+        val vm = viewModel(gtsRunner = runner)
+        vm.onFolderSelected("/tmp/registered")
+        advanceUntilIdle()
+        val callsAfterOpen = runner.calls.size
+
+        vm.onSearchQueryChange("rel")
+        advanceUntilIdle()
+
+        assertEquals(callsAfterOpen, runner.calls.size)
+        assertEquals(listOf("release"), vm.uiState.visibleTrackRows.map { it.name })
+        assertEquals(
+            filterTrackRows(vm.uiState.trackRows, "rel", null).map { it.name },
+            vm.uiState.visibleTrackRows.map { it.name },
+        )
+        assertEquals(2, vm.uiState.trackRows.size)
+    }
+
+    @Test
+    fun searchQuery_blankShowsEveryTrackAndRefreshKeepsQuery() = runTest(dispatcher) {
+        val runner = RecordingGtsRunner {
+            GtsResult(
+                0,
+                """{"id":"id1","path":"/tmp/registered","active":"release","link":"/tmp/gts/storage/id1/release/.git","tracks":["dev","release"]}""",
+                "",
+            )
+        }
+        val vm = viewModel(gtsRunner = runner)
+        vm.onFolderSelected("/tmp/registered")
+        advanceUntilIdle()
+
+        vm.onSearchQueryChange("   ")
+        assertEquals(listOf("dev", "release"), vm.uiState.visibleTrackRows.map { it.name })
+
+        vm.onSearchQueryChange("REL")
+        val callsBeforeRefresh = runner.calls.size
+        vm.onStatusClick()
+        advanceUntilIdle()
+
+        assertEquals(callsBeforeRefresh + 1, runner.calls.size)
+        assertEquals("REL", vm.uiState.searchQuery)
+        assertEquals(listOf("release"), vm.uiState.visibleTrackRows.map { it.name })
+        assertEquals("registered", vm.uiState.windowTitle)
+    }
+
+    @Test
+    fun searchQuery_renameRowStaysVisibleAndNewWorkspaceClearsQuery() = runTest(dispatcher) {
+        val runner = RecordingGtsRunner { invocation ->
+            val path = invocation.workingDirectory
+            GtsResult(
+                0,
+                """{"id":"id1","path":"$path","active":"release","link":"/tmp/gts/storage/id1/release/.git","tracks":["dev","release"]}""",
+                "",
+            )
+        }
+        val vm = viewModel(gtsRunner = runner)
+        vm.onFolderSelected("/tmp/registered")
+        advanceUntilIdle()
+        vm.onSearchQueryChange("rel")
+        vm.onRenameStart("dev")
+
+        assertEquals(listOf("dev", "release"), vm.uiState.visibleTrackRows.map { it.name })
+
+        vm.onFolderSelected("/tmp/other")
+        advanceUntilIdle()
+
+        assertEquals("/tmp/other", vm.uiState.workspacePath)
+        assertEquals("", vm.uiState.searchQuery)
+        assertEquals(listOf("dev", "release"), vm.uiState.visibleTrackRows.map { it.name })
+        assertEquals("other", vm.uiState.windowTitle)
+    }
+
+    @Test
+    fun revealWorkspace_callsRevealerAndDoesNotCallGts() = runTest(dispatcher) {
+        val revealed = mutableListOf<String>()
+        val runner = RecordingGtsRunner {
+            GtsResult(
+                0,
+                """{"id":"id1","path":"/tmp/registered","active":"main","link":"/tmp/gts/storage/id1/main/.git","tracks":["main"]}""",
+                "",
+            )
+        }
+        val vm = viewModel(
+            gtsRunner = runner,
+            folderRevealer = FolderRevealer { revealed += it },
+        )
+        vm.onFolderSelected("/tmp/registered")
+        advanceUntilIdle()
+        val callsAfterOpen = runner.calls.size
+
+        vm.onRevealWorkspace()
+        advanceUntilIdle()
+
+        assertEquals(listOf("/tmp/registered"), revealed)
+        assertEquals(callsAfterOpen, runner.calls.size)
+        assertEquals("/tmp/registered", vm.uiState.workspacePath)
+        assertEquals("registered", vm.uiState.windowTitle)
+        assertNull(vm.uiState.errorMessage)
+    }
+
+    @Test
+    fun revealWorkspace_failure_showsEnglishErrorAndKeepsWorkspace() = runTest(dispatcher) {
+        val runner = RecordingGtsRunner {
+            GtsResult(
+                0,
+                """{"id":"id1","path":"/tmp/registered","active":"main","link":"/tmp/gts/storage/id1/main/.git","tracks":["main"]}""",
+                "",
+            )
+        }
+        val vm = viewModel(
+            gtsRunner = runner,
+            folderRevealer = FolderRevealer { error("desktop open failed") },
+        )
+        vm.onFolderSelected("/tmp/registered")
+        advanceUntilIdle()
+        val callsAfterOpen = runner.calls.size
+
+        vm.onRevealWorkspace()
+        advanceUntilIdle()
+
+        assertEquals(WORKSPACE_FOLDER_REVEAL_ERROR, vm.uiState.errorMessage)
+        assertEquals("/tmp/registered", vm.uiState.workspacePath)
+        assertEquals("registered", vm.uiState.windowTitle)
+        assertEquals(callsAfterOpen, runner.calls.size)
+        assertTrue(vm.uiState.hasWorkspace)
     }
 }
 

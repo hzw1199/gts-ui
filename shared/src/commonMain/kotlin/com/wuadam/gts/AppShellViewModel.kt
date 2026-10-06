@@ -5,6 +5,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -65,6 +66,7 @@ data class AppShellUiState(
     val emptyHint: String,
     val selectFolderLabel: String,
     val workspacePath: String? = null,
+    val searchQuery: String = "",
     val activeTrack: String? = null,
     val linkTarget: String? = null,
     val trackRows: List<TrackRowUi> = emptyList(),
@@ -79,6 +81,9 @@ data class AppShellUiState(
     val errorMessage: String? = null,
     val isBusy: Boolean = false,
 ) {
+    val visibleTrackRows: List<TrackRowUi>
+        get() = filterTrackRows(trackRows, searchQuery, renameEdit?.from)
+
     companion object {
         fun noWorkspace(): AppShellUiState = AppShellUiState(
             hasWorkspace = false,
@@ -108,6 +113,7 @@ class AppShellViewModel(
     private val sameWorkspace: WorkspacePathEquality = WorkspacePathEquality { left, right ->
         left == right
     },
+    private val folderRevealer: FolderRevealer = FolderRevealer {},
 ) : ViewModel() {
     var uiState by mutableStateOf(AppShellUiState.noWorkspace())
         private set
@@ -166,6 +172,27 @@ class AppShellViewModel(
             return
         }
         onFolderSelected(path)
+    }
+
+    fun onSearchQueryChange(query: String) {
+        if (!uiState.hasWorkspace) return
+        uiState = uiState.copy(searchQuery = query)
+    }
+
+    fun onRevealWorkspace() {
+        val path = uiState.workspacePath ?: return
+        if (!uiState.hasWorkspace) return
+        viewModelScope.launch {
+            try {
+                withContext(ioDispatcher) { folderRevealer.reveal(path) }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                if (uiState.workspacePath == path) {
+                    uiState = uiState.copy(errorMessage = WORKSPACE_FOLDER_REVEAL_ERROR)
+                }
+            }
+        }
     }
 
     fun onStatusClick() {
@@ -620,10 +647,12 @@ class AppShellViewModel(
     }
 
     private fun applyWorkspace(status: WorkspaceStatus, rows: List<TrackRowUi>) {
+        val keepQuery = uiState.workspacePath == status.path
         uiState = uiState.copy(
             hasWorkspace = true,
             windowTitle = workspaceDirectoryName(status.path),
             workspacePath = status.path,
+            searchQuery = if (keepQuery) uiState.searchQuery else "",
             activeTrack = status.active,
             linkTarget = status.link,
             trackRows = rows,

@@ -1,8 +1,18 @@
 # gts-ui
 
-Desktop app for multiple independent Git histories in one workspace. It is the graphical front end for the [`gts`](https://github.com/hzw1199/gts) command: the same folder can hold several full Git histories, and the app switches which history the workspace `.git` symlink points at.
+![One folder, a dev history and a release history](images/banner.png)
 
-This repository is the window. Track storage, name checks, init, create, switch, rename, remove, and `info/exclude` stay in [gts](https://github.com/hzw1199/gts). The installed app runs the `gts` file shipped inside it. It does not read or write `~/.gts/`, and it does not replace the `.git` symlink itself.
+One folder. A separate Git history for what you publish, and another for the work that stays here. This window switches which history the folder belongs to. The files stay where they are, so the editor and the dev server stay open.
+
+- **Publish one history, keep another.** Each track has its own commits and its own remote. This directory does not change.
+- **Commit the current edits onto the other history.** After a switch they are a different diff against that track's `HEAD`.
+- **Ignore different local files on each history.** Per-track rules live in `info/exclude`. The workspace `.gitignore` stays shared.
+
+Switching does not check out the other history's files.
+Each history is a track: a full Git directory stored outside the worktree. The workspace `.git` entry is an absolute symlink to the active track. Switching tracks replaces that symlink. Files in the worktree stay put, so the same edits become a different diff under the next history.
+This app does not add worktrees, sparse checkout, or extra remotes. Shared ignore rules stay in the workspace `.gitignore`. Per-track ignores live in that track’s `info/exclude`.
+
+The installed app runs the `gts` file shipped inside it. Track storage, name checks, init, create, switch, rename, remove, and `info/exclude` stay in [gts](https://github.com/hzw1199/gts). The app does not read or write `~/.gts/`, and it does not replace the `.git` symlink itself.
 
 ## Requirements
 
